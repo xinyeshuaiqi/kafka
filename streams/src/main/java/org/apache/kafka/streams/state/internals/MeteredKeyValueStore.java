@@ -34,6 +34,11 @@ import org.apache.kafka.streams.processor.internals.ProcessorContextUtils;
 import org.apache.kafka.streams.processor.internals.ProcessorStateManager;
 import org.apache.kafka.streams.processor.internals.SerdeGetter;
 import org.apache.kafka.streams.processor.internals.metrics.StreamsMetricsImpl;
+import org.apache.kafka.streams.query.KeyQuery;
+import org.apache.kafka.streams.query.PositionBound;
+import org.apache.kafka.streams.query.Query;
+import org.apache.kafka.streams.query.QueryResult;
+import org.apache.kafka.streams.query.RawKeyQuery;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.StateSerdes;
@@ -186,6 +191,38 @@ public class MeteredKeyValueStore<K, V>
         return false;
     }
 
+    @SuppressWarnings("unchecked")
+    @Override
+    public <R> QueryResult<R> query(final Query<R> query,
+        final PositionBound positionBound,
+        final boolean collectExecutionInfo) {
+
+        final long start = System.nanoTime();
+        final QueryResult<R> result;
+
+        if (query instanceof KeyQuery) {
+            final KeyQuery<K, V> typedQuery = (KeyQuery<K, V>) query;
+            final RawKeyQuery rawKeyQuery = RawKeyQuery.withKey(keyBytes(typedQuery.getKey()));
+            final QueryResult<byte[]> rawResult =
+                wrapped().query(rawKeyQuery, positionBound, collectExecutionInfo);
+            if (rawResult.isSuccess()) {
+                final V value = outerValue(rawResult.getResult());
+                final QueryResult<V> typedQueryResult =
+                    rawResult.swapResult(value);
+                result = (QueryResult<R>) typedQueryResult;
+            } else {
+                // the generic type doesn't matter, since failed queries have no result set.
+                result = (QueryResult<R>) rawResult;
+            }
+        } else {
+            result = wrapped().query(query, positionBound, collectExecutionInfo);
+        }
+        final long end = System.nanoTime();
+        result.addExecutionInfo(
+            "Handled in " + getClass() + " with serdes " + serdes + " in " + (end - start) + "ns");
+        return result;
+    }
+
     @Override
     public V get(final K key) {
         Objects.requireNonNull(key, "key cannot be null");
@@ -322,6 +359,10 @@ public class MeteredKeyValueStore<K, V>
             final long e2eLatency =  currentTime - context.timestamp();
             e2eLatencySensor.record(e2eLatency, currentTime);
         }
+    }
+
+    public StateSerdes<K, V> serdes() {
+        return serdes;
     }
 
     private class MeteredKeyValueIterator implements KeyValueIterator<K, V> {
