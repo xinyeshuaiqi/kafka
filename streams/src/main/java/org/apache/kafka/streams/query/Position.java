@@ -17,6 +17,8 @@
 package org.apache.kafka.streams.query;
 
 
+import org.apache.kafka.common.annotation.InterfaceStability.Evolving;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -26,38 +28,45 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
+@Evolving
 public class Position {
+    private final ConcurrentHashMap<String, ConcurrentHashMap<Integer, Long>> position;
 
-    private final Map<String, Map<Integer, Long>> position;
-
-    private Position(final Map<String, Map<Integer, Long>> position) {
+    private Position(final ConcurrentHashMap<String, ConcurrentHashMap<Integer, Long>> position) {
         this.position = position;
     }
 
     public static Position emptyPosition() {
-        return new Position(new HashMap<>());
+        return new Position(new ConcurrentHashMap<>());
     }
 
-    public static Position fromMap(final Map<String, Map<Integer, Long>> map) {
+    public static Position fromMap(final Map<String, ? extends Map<Integer, Long>> map) {
         return new Position(deepCopy(map));
     }
 
     public Position withComponent(final String topic, final int partition, final long offset) {
-        final Map<String, Map<Integer, Long>> updated = deepCopy(position);
-        updated.computeIfAbsent(topic, k -> new HashMap<>()).put(partition, offset);
-        return new Position(updated);
+        position
+            .computeIfAbsent(topic, k -> new ConcurrentHashMap<>())
+            .put(partition, offset);
+        return this;
+    }
+
+    public Position copy() {
+        return new Position(deepCopy(position));
     }
 
     public Position merge(final Position other) {
         if (other == null) {
             return this;
         } else {
-            final Map<String, Map<Integer, Long>> copy = deepCopy(position);
-            for (final Entry<String, Map<Integer, Long>> entry : other.position.entrySet()) {
+            final ConcurrentHashMap<String, ConcurrentHashMap<Integer, Long>> copy =
+                deepCopy(position);
+            for (final Entry<String, ConcurrentHashMap<Integer, Long>> entry : other.position.entrySet()) {
                 final String topic = entry.getKey();
                 final Map<Integer, Long> partitionMap =
-                    copy.computeIfAbsent(topic, k -> new HashMap<>());
+                    copy.computeIfAbsent(topic, k -> new ConcurrentHashMap<>());
                 for (final Entry<Integer, Long> partitionOffset : entry.getValue().entrySet()) {
                     final Integer partition = partitionOffset.getKey();
                     final Long offset = partitionOffset.getValue();
@@ -79,88 +88,15 @@ public class Position {
         return Collections.unmodifiableMap(position.get(topic));
     }
 
-    public ByteBuffer serialize() {
-        final byte version = (byte) 0;
-
-        int arraySize = Byte.SIZE; // version
-
-        final int nTopics = position.size();
-        arraySize += Integer.SIZE;
-
-        final ArrayList<Entry<String, Map<Integer, Long>>> entries =
-            new ArrayList<>(position.entrySet());
-        final byte[][] topics = new byte[entries.size()][];
-
-        for (int i = 0; i < nTopics; i++) {
-            final Entry<String, Map<Integer, Long>> entry = entries.get(i);
-            final byte[] topicBytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
-            topics[i] = topicBytes;
-            arraySize += Integer.SIZE; // topic name length
-            arraySize += topicBytes.length; // topic name itself
-
-            final Map<Integer, Long> partitionOffsets = entry.getValue();
-            arraySize += Integer.SIZE; // Number of PartitionOffset pairs
-            arraySize += (Integer.SIZE + Long.SIZE)
-                * partitionOffsets.size(); // partitionOffsets themselves
-        }
-
-        final ByteBuffer buffer = ByteBuffer.allocate(arraySize);
-        buffer.put(version);
-
-        buffer.putInt(nTopics);
-        for (int i = 0; i < nTopics; i++) {
-            buffer.putInt(topics[i].length);
-            buffer.put(topics[i]);
-
-            final Entry<String, Map<Integer, Long>> entry = entries.get(i);
-            final Map<Integer, Long> partitionOffsets = entry.getValue();
-            buffer.putInt(partitionOffsets.size());
-            for (final Entry<Integer, Long> partitionOffset : partitionOffsets.entrySet()) {
-                buffer.putInt(partitionOffset.getKey());
-                buffer.putLong(partitionOffset.getValue());
-            }
-        }
-
-        buffer.flip();
-        return buffer;
-    }
-
-    public static Position deserialize(final ByteBuffer buffer) {
-        final byte version = buffer.get();
-
-        switch (version) {
-            case (byte) 0:
-                final int nTopics = buffer.getInt();
-                final Map<String, Map<Integer, Long>> position = new HashMap<>(nTopics);
-                for (int i = 0; i < nTopics; i++) {
-                    final int topicNameLength = buffer.getInt();
-                    final byte[] topicNameBytes = new byte[topicNameLength];
-                    buffer.get(topicNameBytes);
-                    final String topic = new String(topicNameBytes, StandardCharsets.UTF_8);
-
-                    final int numPairs = buffer.getInt();
-                    final Map<Integer, Long> partitionOffsets = new HashMap<>(numPairs);
-                    for (int j = 0; j < numPairs; j++) {
-                        partitionOffsets.put(buffer.getInt(), buffer.getLong());
-                    }
-                    position.put(topic, partitionOffsets);
-                }
-                return Position.fromMap(position);
-            default:
-                throw new IllegalArgumentException(
-                    "Unknown version " + version + " when deserializing Position"
-                );
-        }
-    }
-
-    private static Map<String, Map<Integer, Long>> deepCopy(
-        final Map<String, Map<Integer, Long>> map) {
+    private static ConcurrentHashMap<String, ConcurrentHashMap<Integer, Long>> deepCopy(
+        final Map<String, ? extends Map<Integer, Long>> map) {
         if (map == null) {
-            return new HashMap<>();
+            return new ConcurrentHashMap<>();
         } else {
-            final Map<String, Map<Integer, Long>> copy = new HashMap<>(map.size());
-            for (final Entry<String, Map<Integer, Long>> entry : map.entrySet()) {
-                copy.put(entry.getKey(), new HashMap<>(entry.getValue()));
+            final ConcurrentHashMap<String, ConcurrentHashMap<Integer, Long>> copy =
+                new ConcurrentHashMap<>(map.size());
+            for (final Entry<String, ? extends Map<Integer, Long>> entry : map.entrySet()) {
+                copy.put(entry.getKey(), new ConcurrentHashMap<>(entry.getValue()));
             }
             return copy;
         }
@@ -187,6 +123,6 @@ public class Position {
 
     @Override
     public int hashCode() {
-        return Objects.hash(position);
+        throw new UnsupportedOperationException("This mutable object is not suitable as a hash key");
     }
 }
