@@ -63,8 +63,8 @@ import org.apache.kafka.streams.processor.internals.ThreadStateTransitionValidat
 import org.apache.kafka.streams.processor.internals.TopologyMetadata;
 import org.apache.kafka.streams.processor.internals.assignment.AssignorError;
 import org.apache.kafka.streams.processor.internals.metrics.StreamsMetricsImpl;
-import org.apache.kafka.streams.query.InteractiveQueryRequest;
-import org.apache.kafka.streams.query.InteractiveQueryResult;
+import org.apache.kafka.streams.query.StateQueryRequest;
+import org.apache.kafka.streams.query.StateQueryResult;
 import org.apache.kafka.streams.query.PositionBound;
 import org.apache.kafka.streams.query.QueryResult;
 import org.apache.kafka.streams.state.HostInfo;
@@ -1772,14 +1772,14 @@ public class KafkaStreams implements AutoCloseable {
     }
 
     @Evolving
-    public <R> InteractiveQueryResult<R> query(final InteractiveQueryRequest<R> request) {
+    public <R> StateQueryResult<R> query(final StateQueryRequest<R> request) {
         final String storeName = request.getStoreName();
         if (!topologyMetadata.hasStore(storeName)) {
             throw new UnknownStateStoreException(
                 "Cannot get state store " + storeName + " because no such store is registered in the topology."
             );
         }
-        final InteractiveQueryResult<R> result = new InteractiveQueryResult<>(new HashMap<>());
+        final StateQueryResult<R> result = new StateQueryResult<>();
 
         final Map<String, StateStore> globalStateStores = topologyMetadata.globalStateStores();
         if (globalStateStores.containsKey(storeName)) {

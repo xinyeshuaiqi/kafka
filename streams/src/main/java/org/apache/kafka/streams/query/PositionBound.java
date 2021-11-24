@@ -17,8 +17,17 @@
 package org.apache.kafka.streams.query;
 
 
+import org.apache.kafka.common.annotation.InterfaceStability.Evolving;
+
 import java.util.Objects;
 
+/**
+ * A class bounding the processing state Position during queries.
+ * This can be used to specify that a query should fail if the
+ * locally available partition isn't caught up to the specified bound.
+ * "Unbounded" places no restrictions on the current location of the partition.
+ */
+@Evolving
 public class PositionBound {
 
     private final Position position;
@@ -27,26 +36,45 @@ public class PositionBound {
     private PositionBound(final Position position, final boolean unbounded) {
         if (unbounded && position != null) {
             throw new IllegalArgumentException();
+        } else if (position != null) {
+            this.position = position.copy();
+            this.unbounded = false;
+        } else {
+            this.position = null;
+            this.unbounded = unbounded;
         }
-        this.position = position;
-        this.unbounded = unbounded;
     }
 
+    /**
+     * Creates a new PositionBound representing "no bound"
+     */
     public static PositionBound unbounded() {
         return new PositionBound(null, true);
     }
 
+    /**
+     * Creates a new PositionBound representing a specific position.
+     */
     public static PositionBound at(final Position position) {
         return new PositionBound(position, false);
     }
 
+    /**
+     * Returns true iff this object specifies that there is no position bound.
+     */
     public boolean isUnbounded() {
         return unbounded;
     }
 
+    /**
+     * Returns the specific position of this bound.
+     * @throws IllegalArgumentException if this is an "unbounded" position.
+     */
     public Position position() {
         if (unbounded) {
-            throw new IllegalArgumentException();
+            throw new IllegalArgumentException(
+                "Cannot get the position of an unbounded PositionBound."
+            );
         } else {
             return position;
         }
@@ -75,6 +103,6 @@ public class PositionBound {
 
     @Override
     public int hashCode() {
-        return Objects.hash(position, unbounded);
+        throw new UnsupportedOperationException("This mutable object is not suitable as a hash key");
     }
 }

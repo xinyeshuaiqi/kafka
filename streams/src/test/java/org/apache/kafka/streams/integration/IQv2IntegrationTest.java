@@ -26,7 +26,6 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.KeyValueTimestamp;
-import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster;
@@ -37,8 +36,8 @@ import org.apache.kafka.streams.kstream.TimeWindows;
 import org.apache.kafka.streams.kstream.Windowed;
 import org.apache.kafka.streams.kstream.internals.TimeWindow;
 import org.apache.kafka.streams.query.FailureReason;
-import org.apache.kafka.streams.query.InteractiveQueryRequest;
-import org.apache.kafka.streams.query.InteractiveQueryResult;
+import org.apache.kafka.streams.query.StateQueryRequest;
+import org.apache.kafka.streams.query.StateQueryResult;
 import org.apache.kafka.streams.query.Iterators;
 import org.apache.kafka.streams.query.KeyQuery;
 import org.apache.kafka.streams.query.Position;
@@ -47,8 +46,6 @@ import org.apache.kafka.streams.query.RawKeyQuery;
 import org.apache.kafka.streams.query.RawScanQuery;
 import org.apache.kafka.streams.state.KeyValueIterator;
 import org.apache.kafka.streams.state.KeyValueStore;
-import org.apache.kafka.streams.state.QueryableStoreTypes;
-import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.apache.kafka.streams.state.StateSerdes;
 import org.apache.kafka.streams.state.ValueAndTimestamp;
 import org.apache.kafka.streams.state.WindowStore;
@@ -76,7 +73,7 @@ import java.util.stream.Collectors;
 
 import static org.apache.kafka.common.utils.Utils.mkEntry;
 import static org.apache.kafka.common.utils.Utils.mkMap;
-import static org.apache.kafka.streams.query.InteractiveQueryRequest.inStore;
+import static org.apache.kafka.streams.query.StateQueryRequest.inStore;
 import static org.apache.kafka.streams.query.PositionBound.at;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -189,7 +186,7 @@ public class IQv2IntegrationTest {
             kafkaStreams.serdesForStore(CACHED_TABLE);
 
         final byte[] rawKey = serdes.rawKey(1);
-        final InteractiveQueryResult<byte[]> result = kafkaStreams.query(
+        final StateQueryResult<byte[]> result = kafkaStreams.query(
             inStore(CACHED_TABLE).withQuery(RawKeyQuery.withKey(rawKey)));
 
         System.out.println("|||" + result);
@@ -211,7 +208,7 @@ public class IQv2IntegrationTest {
             kafkaStreams.serdesForStore(UNCACHED_TABLE);
 
         final byte[] rawKey = serdes.rawKey(1);
-        final InteractiveQueryResult<byte[]> result = kafkaStreams.query(
+        final StateQueryResult<byte[]> result = kafkaStreams.query(
             inStore(UNCACHED_TABLE).withQuery(RawKeyQuery.withKey(rawKey)));
 
         System.out.println("|||" + result);
@@ -230,10 +227,10 @@ public class IQv2IntegrationTest {
     public void shouldQueryTypedKeyFromUncachedTable() {
         final Integer key = 1;
 
-        final InteractiveQueryRequest<ValueAndTimestamp<Integer>> query =
+        final StateQueryRequest<ValueAndTimestamp<Integer>> query =
             inStore(UNCACHED_TABLE).withQuery(KeyQuery.withKey(key));
 
-        final InteractiveQueryResult<ValueAndTimestamp<Integer>> result = kafkaStreams.query(query);
+        final StateQueryResult<ValueAndTimestamp<Integer>> result = kafkaStreams.query(query);
 
         final ValueAndTimestamp<Integer> value = result.getOnlyPartitionResult().getResult();
 
@@ -247,10 +244,10 @@ public class IQv2IntegrationTest {
     public void exampleKeyQueryIntoWindowStore() {
         final Windowed<Integer> key = new Windowed<>(1, new TimeWindow(0L, 99L));
 
-        final InteractiveQueryRequest<ValueAndTimestamp<Long>> query =
+        final StateQueryRequest<ValueAndTimestamp<Long>> query =
             inStore(UNCACHED_COUNTS_TABLE).withQuery(KeyQuery.withKey(key));
 
-        final InteractiveQueryResult<ValueAndTimestamp<Long>> result = kafkaStreams.query(query);
+        final StateQueryResult<ValueAndTimestamp<Long>> result = kafkaStreams.query(query);
 
         final ValueAndTimestamp<Long> value = result.getOnlyPartitionResult().getResult();
 
@@ -263,7 +260,7 @@ public class IQv2IntegrationTest {
         final StateSerdes<Integer, ValueAndTimestamp<Integer>> serdes =
             kafkaStreams.serdesForStore(UNCACHED_TABLE);
 
-        final InteractiveQueryResult<KeyValueIterator<Bytes, byte[]>> scanResult =
+        final StateQueryResult<KeyValueIterator<Bytes, byte[]>> scanResult =
             kafkaStreams.query(inStore(UNCACHED_TABLE).withQuery(RawScanQuery.scan()));
 
         System.out.println("|||" + scanResult);
@@ -294,7 +291,7 @@ public class IQv2IntegrationTest {
         final StateSerdes<Integer, ValueAndTimestamp<Integer>> serdes =
             kafkaStreams.serdesForStore(UNCACHED_TABLE);
 
-        final InteractiveQueryResult<KeyValueIterator<Bytes, byte[]>> scanResult =
+        final StateQueryResult<KeyValueIterator<Bytes, byte[]>> scanResult =
             kafkaStreams.query(inStore(UNCACHED_TABLE).withQuery(RawScanQuery.scan()));
 
         System.out.println("|||" + scanResult);
@@ -330,7 +327,7 @@ public class IQv2IntegrationTest {
             kafkaStreams.serdesForStore(UNCACHED_TABLE);
 
         final byte[] rawKey = serdes.rawKey(1);
-        final InteractiveQueryResult<byte[]> result = kafkaStreams.query(
+        final StateQueryResult<byte[]> result = kafkaStreams.query(
             inStore(UNCACHED_TABLE)
                 .withQuery(RawKeyQuery.withKey(rawKey))
                 .withPositionBound(
@@ -361,7 +358,7 @@ public class IQv2IntegrationTest {
 
         final byte[] rawKey = serdes.rawKey(1);
         // intentionally setting the bound higher than the current position.
-        final InteractiveQueryResult<byte[]> result = kafkaStreams.query(
+        final StateQueryResult<byte[]> result = kafkaStreams.query(
             inStore(UNCACHED_TABLE)
                 .withQuery(RawKeyQuery.withKey(rawKey))
                 .withPositionBound(
@@ -399,7 +396,7 @@ public class IQv2IntegrationTest {
         final StateSerdes<Integer, ValueAndTimestamp<Integer>> serdes =
             kafkaStreams.serdesForStore(UNCACHED_TABLE);
 
-        final InteractiveQueryResult<KeyValueIterator<Bytes, byte[]>> scanResult =
+        final StateQueryResult<KeyValueIterator<Bytes, byte[]>> scanResult =
             kafkaStreams.query(
                 inStore(UNCACHED_TABLE)
                     .withQuery(RawScanQuery.scan())
